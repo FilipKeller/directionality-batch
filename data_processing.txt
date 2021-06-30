@@ -1,0 +1,269 @@
+clear; close; clc;
+
+% Processing data obtained by automatic measurement of angles
+
+% Loading data from text file
+data = readtable('output_data.txt', 'Delimiter', ',');
+
+% Extracting column vectors
+phi_raw = data.Direction;
+dspr = data.Dispersion;
+GoF = data.GoF;
+
+% Number of all values
+N = length(phi_raw)
+
+% Exclusion of elements at the end
+exclEnd = 0;  % number of excluded elements
+N = N - exclEnd; % redefining N
+phi_raw = phi_raw(1:N);
+dspr = dspr(1:N);
+GoF = GoF(1:N);
+
+% Creating time vector
+t = [1:1:N]';  % s
+
+% Exclusion of elements at the beginning
+excl = 1000;  % number of exluded elements
+t = t(excl+1:N,:);  % adjusted time vector
+phi_raw = phi_raw(excl+1:N,:);  % excluding the elements
+dspr = dspr(excl+1:N,:);
+GoF = GoF(excl+1:N,:);
+M = N - excl  % Number of all remaining values (all minus excluded)
+
+% % Plotting raw data
+% plot(t,phi_raw,'.');
+
+% Analysis of goodness of fit - sorting
+phi_om = ones(M,1);
+t_om = t;
+
+F_count = 0;
+for i = 1:M
+    if GoF(i) < 0.95
+        phi_om(i) = -10;
+        F_count = F_count + 1;
+    else
+        phi_om(i) = phi_raw(i);
+    end
+end
+
+t_om = find(phi_om ~= -10) + excl;  % time vector of correct values
+phi_om = phi_om(phi_om ~= -10);  % removing incorrect values
+N_om = length(phi_om)  % number of correct values
+
+F_count  % number of incorrect values
+rel_GoF = 100*(M - F_count)/M  % percentage of correct values
+rel_F = 100*F_count/M  % percentage of incorrect values
+
+% Finding out whether rotating clockwise or counter-clockwise
+rot_vec = sign(diff(phi_om));  % finding sign of difference between each value
+rot = mode(rot_vec)
+% (1) counter-clockwise direction of rotation
+% (-1) clockwise direction of rotation
+
+% % Plotting raw data omitting False values
+% plot(t_om,phi_om,'.');
+
+% Preprocessing of data before interpolation
+% The most important thing is to remove the discontinuity
+j = 0;  % semi-revolution counter
+phi_om_sort(1) = phi_om(1);
+for i = 2:N_om
+    % condition is satisfied if there is discontinuity (occurs after each 180 deg distance)
+    if abs(phi_om(i) - phi_om(i-1)) > 50
+        j = j + 1;
+        t_semiRev(j) = t_om(i);  % time of when j-th semi-revolution is completed
+    end
+    phi_om_sort(i) = phi_om(i) + 180*j*rot;  % this removes discontinuity
+end
+phi_om_sort = phi_om_sort';
+
+    % Time values of completed revolutions will be useful for obtaining revolution frequency
+    t_semiRev = t_semiRev'  % time values in which each semi-revolution is completed
+    t_rev = t_semiRev(2:2:end,1)  % time values in which each revolution is completed
+
+% % Plotting preprocessed data ready for interpolation
+% plot(t_om,phi_om_sort,'.');
+
+% Interpolation of data and plot for verification
+% adjusted time vector t is already defined and the number of its elements is M
+phi = interp1(t_om,phi_om_sort,t,'spline');
+plot(t_om,phi_om_sort,'o',"MarkerSize",6);
+hold on;
+plot(t,phi,'.','Color','red');
+hold off;
+
+% Creating angular shift column vector
+% shift is angular distance in every 1s interval
+phi_shift = abs(diff(phi));
+L = length(phi_shift);  % L == M - 1, since diff funtion creates a vector one element shorter
+
+% Creating angular distance (sum of preceding phi_shift), necessary for calculation of angular velocity
+phi_dst(1) = phi_shift(1);
+for i = 2:L
+    phi_dst(i) = phi_dst(i-1) + phi_shift(i);  % another phi_shift value is added every second
+end
+phi_dst = phi_dst';
+
+% Redefining time vector
+t = [excl+1:1:N-1]'; % redefined time vector one element shorter as a consequence of diff function
+
+% Creating angular position plot with interpolated data
+phi_p = rem(phi_dst,360);
+plot(t,phi_p, '.');
+xlabel('Time [s]'); ylabel('Angular position [°]');
+ylim([-20, 380]);
+yticks([0:60:360]);
+
+% Creating angular position plot with interpolated data - zoomed in
+phi_p = rem(phi_dst,360);
+plot(t,phi_p, '.');
+xlabel('Time [s]'); ylabel('Angular position [°]');
+xlim([4000, 4600]); ylim([-20, 380]);
+yticks([0:60:360]);
+
+% % Plotting angular distance against time
+% plot(t,phi_dst,'.');
+
+% Calculating angular velocity (numerical differentiaton of angular distance)
+% part one: start and end
+omega(1) = (-3*phi_dst(1) + 4*phi_dst(2) - phi_dst(3))/(2*1);
+omega(L) = (phi_dst(L-2) -4*phi_dst(L-1) + 3*phi_dst(L))/(2*1);
+% part two: points of index 2...L-1
+for i = 2:(L-1)
+    omega(i) = (-phi_dst(i-1) + phi_dst(i+1))/(2*1);
+end
+omega = omega';  % deg/s
+
+% Plotting angular velocity against time
+plot(t,omega,'-');
+xlabel('Time [s]'); ylabel('Angular velocity [°{\cdot}s^{-1}]');
+xline(4000,'LineWidth', 1.5, 'Color', '#a300cc');
+xline(4600,'LineWidth', 1.5, 'Color', '#a300cc');
+xline(9000,'LineWidth', 1.5, 'Color', '#e62e00');
+xline(9600,'LineWidth', 1.5, 'Color', '#e62e00');
+
+% Plotting angular velocity against time - zoomed in
+plot(t,omega,'-');
+xlabel('Time [s]'); ylabel('Angular velocity [°{\cdot}s^{-1}]');
+xlim([2000,2600]); ylim([0,10]);
+
+% Plotting angular velocity against time - zoomed in
+plot(t,omega,'-');
+xlabel('Time [s]'); ylabel('Angular velocity [°{\cdot}s^{-1}]');
+xlim([4000,4600]); ylim([0,10]);
+
+% Plotting angular velocity against time - zoomed in
+plot(t,omega,'-');
+xlabel('Time [s]'); ylabel('Angular velocity [°{\cdot}s^{-1}]');
+xlim([9000,9600]); ylim([0,10]);
+
+% Calculating angular acceleration (2nd order numerical differentiaton of angular distance)
+% part one: start and end
+eps(1) = (phi_dst(1) - 2*phi_dst(2) + phi_dst(3))/(1^2);
+eps(L) = (phi_dst(L-2) - 2*phi_dst(L-1) + phi_dst(L))/(1^2);
+% part two: points of index 2...L-1
+for i = 2:(L-1)
+    eps(i) = (phi_dst(i-1) - 2*phi_dst(i) + phi_dst(i+1))/(1^2);
+end
+eps = eps';  % deg/s
+
+% Plotting angular acceleration against time
+plot(t,eps,'-');
+xlabel('Time [s]'); ylabel('Angular acceleration [°{\cdot}s^{-2}]');
+yline(0);
+ylim([-2, 2]);
+xline(4000,'LineWidth', 1.5, 'Color', '#a300cc');
+xline(4200,'LineWidth', 1.5, 'Color', '#a300cc');
+
+% Plotting angular acceleration against time - zoomed in
+plot(t,eps,'-');
+xlabel('Time [s]'); ylabel('Angular acceleration [°{\cdot}s^{-2}]');
+yline(0);
+xlim([4000, 4200]); ylim([-1.5, 1.5]);
+xticks([4000:40:4200]);
+
+% Calulating revolution frequency
+% i.e. reciprocal time intervals in which full revolution is completed
+t_rev_int = diff(t_rev)  % time interval, duration of every revolution
+F_rev = 1./t_rev_int  % reciprocal values, frequency of revolutions
+
+% Adjusting t_rev vector
+t_rev = t_rev(2:end);  % again, diff function creates vector one element shorter
+
+% % Plotting t_rev_int for visual verification
+% plot(t_rev_int,'.');
+
+% Plotting frequency of revolutions against time 
+plot(t_rev,F_rev,'o');
+xlabel('Time [s]'); ylabel('Revolution frequency [Hz]');
+
+% Plotting angular velocity against angular position
+plot(phi_p,omega,'.');
+xlabel('Angular position [°]'); ylabel('Angular velocity [°{\cdot}s^{-1}]');
+xlim([0, 360]);
+xticks([0:60:360]);
+    
+% Plotting subsets angular velocity against angular position
+S = 1;  % index of a subset consisting of 500 elements
+while S < M/500
+    figure;
+    plot(phi_p(500*(S-1)+1:500*S),omega(500*(S-1)+1:500*S), '.');
+    S = S + 1;
+end
+
+% Plotting 'clean' values
+plot(phi_p(1000:end),omega(1000:end),'.');
+xlabel('Angular position [°]'); ylabel('Angular velocity [°{\cdot}s^{-1}]');
+xlim([0, 360]);
+xticks([0:60:360]);
+
+% Plotting two-color values
+plot(phi_p(1000:end),omega(1000:end),'.');
+xlabel('Angular position [°]'); ylabel('Angular velocity [°{\cdot}s^{-1}]');
+xlim([0, 360]);
+xticks([0:60:360]);
+hold on;
+plot(phi_p(1:1000),omega(1:1000),'.', 'Color','red');
+hold off;
+
+% Plotting subsets of angular velocity against angular position
+% into a single figure using different colors
+S = 1;  % index of a subset consisting of 500 elements
+figure;
+for S = [3:15]
+    plot(phi_p(500*(S-1)+1:500*S),omega(500*(S-1)+1:500*S),'o','MarkerSize', 4);
+    hold on;
+    S = S + 1;
+end
+
+% Plotting subsets of angular velocity against angular position
+% into a single figure using different colors
+S = 1;  % index of a subset consisting of 500 elements
+figure;
+for S = [3 10 17]
+    plot(phi_p(500*(S-1)+1:500*S),omega(500*(S-1)+1:500*S),'o','MarkerSize', 4);
+    hold on;
+    S = S + 1;
+end
+hold off;
+xlabel('Angular position [°]'); ylabel('Angular velocity [°{\cdot}s^{-1}]');
+xlim([0, 360]);
+ylim([0, 8]);
+xticks([0:60:360]);
+
+% Plotting subsets of angular velocity against angular position
+% into a single figure using different colors
+S = 1;  % index of a subset consisting of 500 elements
+figure;
+for S = [3 9 15 19]
+    plot(phi_p(500*(S-1)+1:500*S),omega(500*(S-1)+1:500*S),'o','MarkerSize', 4);
+    hold on;
+    S = S + 1;
+end
+hold off;
+xlabel('Angular position [°]'); ylabel('Angular velocity [°{\cdot}s^{-1}]');
+xlim([0, 360]);
+ylim([0, 8]);
+xticks([0:60:360]);
